@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ord-analysis"
+version = "0.1.0"
+description = "Example queries and EDA against a local ORD database"
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+where = ["src"]

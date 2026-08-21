@@ -1,0 +1,21 @@
+name: ord-analysis
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - rdkit
+  - rdkit-postgresql
+  - sqlalchemy>=2.0
+  - psycopg
+  - psycopg-binary
+  - pandas
+  - numpy
+  - matplotlib
+  - seaborn
+  - jupyterlab
+  - nbconvert
+  - tqdm
+  - pip
+  - pip:
+      - ord-schema
+      - python-dotenv
