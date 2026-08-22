@@ -10,7 +10,7 @@ query interface (see `ord_schema/orm/README.md`), rather than against the raw
 import pandas as pd
 from ord_schema.orm.mappers import Mappers
 from ord_schema.orm.rdkit_mappers import FingerprintType, RDKitMols
-from sqlalchemy import Engine, func, select
+from sqlalchemy import Engine, MetaData, Table, func, inspect, select
 from sqlalchemy.orm import Session
 
 # Seconds-per-unit for converting Time messages to a common "hours" scale.
@@ -285,6 +285,69 @@ def components_per_input(engine: Engine) -> pd.DataFrame:
         .join(Mappers.ReactionProvenance)
         .join(Mappers.Compound)
         .group_by(Mappers.ReactionInput.id, Mappers.ReactionProvenance.doi)
+    )
+    with Session(engine) as session:
+        df = pd.DataFrame(session.execute(query).all())
+    df["is_uspto"] = df["doi"].isin(USPTO_DOIS)
+    return df
+
+
+def user_reaction_types(engine: Engine) -> pd.DataFrame:
+    """Returns the user-submitted `REACTION_TYPE` reaction identifier, where present.
+
+    This is a free-text field (not a controlled vocabulary) -- e.g. "SUZUKI", "Suzuki",
+    and "Suzuki-Miyaura cross-coupling" all appear as distinct values for the same
+    reaction type. See the reaction-type notebook for a best-effort normalization pass.
+    """
+    query = (
+        select(
+            Mappers.Reaction.reaction_id,
+            Mappers.Dataset.dataset_id,
+            Mappers.ReactionProvenance.doi,
+            Mappers.ReactionIdentifier.value,
+            Mappers.ReactionIdentifier.details,
+        )
+        .select_from(Mappers.Reaction)
+        .join(Mappers.Dataset)
+        .join(Mappers.ReactionProvenance)
+        .join(Mappers.ReactionIdentifier)
+        .where(Mappers.ReactionIdentifier.type == "REACTION_TYPE")
+    )
+    with Session(engine) as session:
+        df = pd.DataFrame(session.execute(query).all())
+    df["is_uspto"] = df["doi"].isin(USPTO_DOIS)
+    return df
+
+
+def derived_reaction_classes(engine: Engine) -> pd.DataFrame:
+    """Returns Rxn-INSIGHT-derived reaction classifications from `derived.reaction_classes`, if present.
+
+    That table isn't part of the standard generated `Mappers` set (see `ord_schema.orm.mappers`) --
+    it was written by an optional, external classification pass (`--classify_reactions` in
+    `add_datasets.py`) that has since been removed from ord_schema upstream (as of 2026-08-18; see
+    https://github.com/open-reaction-database/ord-schema/pull/978). An existing database that was
+    built with that flag keeps the table and its rows regardless of the upstream removal, but not
+    every database will have been built with it -- this returns an empty DataFrame (with the
+    expected columns) rather than raising if the table doesn't exist, so callers/notebooks can
+    treat "no derived classification available" as a normal, expected outcome.
+    """
+    columns = ["reaction_id", "dataset_id", "doi", "reaction_class", "reaction_name"]
+    if not inspect(engine).has_table("reaction_classes", schema="derived"):
+        return pd.DataFrame(columns=columns)
+
+    reaction_classes = Table("reaction_classes", MetaData(schema="derived"), autoload_with=engine)
+    query = (
+        select(
+            Mappers.Reaction.reaction_id,
+            Mappers.Dataset.dataset_id,
+            Mappers.ReactionProvenance.doi,
+            reaction_classes.c.reaction_class,
+            reaction_classes.c.reaction_name,
+        )
+        .select_from(Mappers.Reaction)
+        .join(Mappers.Dataset)
+        .join(Mappers.ReactionProvenance)
+        .join(reaction_classes, reaction_classes.c.reaction_id == Mappers.Reaction.id)
     )
     with Session(engine) as session:
         df = pd.DataFrame(session.execute(query).all())
